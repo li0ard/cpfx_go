@@ -73,7 +73,7 @@ func main() {
 	password, _ := term.ReadPassword(0)
 	fmt.Println("")
 	PASS := string(password)
-	bin, _ := readBinFile("gost.pfx")
+	bin, _ := readBinFile(os.Args[1])
 	pfx, _ := getKeybags(bin)
 	for _, keybag := range pfx {
 		var a pbeInfo
