@@ -23,11 +23,6 @@ type privateKey struct {
 	PrivateKey []byte
 }
 
-type exportKeyBlobCek struct {
-	Enc []byte
-	Mac []byte
-}
-
 type exportKeyBlobOids struct {
 	Id    asn1.ObjectIdentifier
 	Value struct {
@@ -38,8 +33,11 @@ type exportKeyBlobOids struct {
 
 type exportKeyBlob struct {
 	Value struct {
-		Ukm  []byte
-		Cek  exportKeyBlobCek
+		Ukm []byte
+		Cek struct {
+			Enc []byte
+			Mac []byte
+		}
 		Oids asn1.RawValue `asn1:"tag:0,explicit,optional"`
 	}
 }
@@ -77,18 +75,14 @@ type pkcs12Attribute struct {
 	Value asn1.RawValue `asn1:"set"`
 }
 
-type pbeParamsAttrs struct {
-	Salt   []byte
-	Rounds int
-}
-
-type pbeParams struct {
-	Algorithm  asn1.ObjectIdentifier
-	Parameters pbeParamsAttrs
-}
-
 type pbeInfo struct {
-	Header       pbeParams
+	Header struct {
+		Algorithm  asn1.ObjectIdentifier
+		Parameters struct {
+			Salt   []byte
+			Rounds int
+		}
+	}
 	EncryptedKey []byte
 }
 

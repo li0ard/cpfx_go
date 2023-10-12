@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"encoding/pem"
 	"fmt"
-	"log"
 	"os"
 	"unicode/utf16"
 
@@ -66,7 +65,8 @@ func costyl(val []byte) []byte {
 
 func main() {
 	if len(os.Args) < 2 {
-		log.Fatal("Как использовать: ./program <файл PFX>")
+		fmt.Println("Как использовать: ./program <файл PFX>")
+		os.Exit(0)
 	}
 	fmt.Println("CryptoPro PFX Decoder by li0ard (Go version)")
 	fmt.Printf("Введите пароль: ")
@@ -76,25 +76,25 @@ func main() {
 	bin, _ := readBinFile(os.Args[1])
 	pfx, _ := getKeybags(bin)
 	for _, keybag := range pfx {
-		var a pbeInfo
-		asn1.Unmarshal(keybag.Value.Bytes, &a)
-		ROUNDS := a.Header.Parameters.Rounds
-		SALT := hex.EncodeToString(a.Header.Parameters.Salt)
+		var info pbeInfo
+		asn1.Unmarshal(keybag.Value.Bytes, &info)
+		ROUNDS := info.Header.Parameters.Rounds
+		SALT := hex.EncodeToString(info.Header.Parameters.Salt)
 		KEY := utf16le(PASS)
 		fmt.Println(" SALT  = " + SALT)
 		fmt.Printf(" ITERS = %d\n", ROUNDS)
 		for i := 1; i < ROUNDS+1; i++ {
 			hasher := gost341194.New(&gost28147.SboxIdGostR341194CryptoProParamSet)
-			a := decodeHex(hex.EncodeToString(KEY) + SALT + fmt.Sprintf("%04s", fmt.Sprintf("%x", i)))
-			hasher.Write(a)
+			tmp := decodeHex(hex.EncodeToString(KEY) + SALT + fmt.Sprintf("%04s", fmt.Sprintf("%x", i)))
+			hasher.Write(tmp)
 			KEY = hasher.Sum(nil)
 		}
 		fmt.Println(" KEY   = " + hex.EncodeToString(KEY))
 		fmt.Println(" IV    = " + SALT[:16])
 		cipher := gost28147.NewCipher(KEY, &gost28147.SboxIdGost2814789CryptoProAParamSet)
 		fe := cipher.NewCFBDecrypter(decodeHex(SALT[:16]))
-		result := make([]byte, len(a.EncryptedKey))
-		fe.XORKeyStream(result, a.EncryptedKey)
+		result := make([]byte, len(info.EncryptedKey))
+		fe.XORKeyStream(result, info.EncryptedKey)
 		var blob keyBlob
 		asn1.Unmarshal(result, &blob)
 		var blob2 exportKeyBlob
@@ -106,7 +106,6 @@ func main() {
 		if algtype == "42aa" {
 			algooid = asn1.ObjectIdentifier([]int{1, 2, 643, 7, 1, 1, 1, 2})
 		}
-		_ = algooid
 
 		var oids exportKeyBlobOids
 
@@ -115,9 +114,8 @@ func main() {
 			panic("costyl: " + err.Error())
 		}
 
-		var tmp []byte
 		kdfer := gost34112012256.NewKDF(KEY)
-		KEKe := kdfer.Derive(tmp, decodeHex("26BDB878"), UKM)
+		KEKe := kdfer.Derive(nil, decodeHex("26BDB878"), UKM)
 		fmt.Println(" KEKE  = " + hex.EncodeToString(KEKe))
 		switch algtype {
 		case "46aa", "42aa":
@@ -127,7 +125,6 @@ func main() {
 			fe.CryptBlocks(Ks, ENC)
 			fmt.Println(" K     = " + hex.EncodeToString(Ks))
 			var pkey privateKey
-			pkey.Version = 0
 			pkey.PrivateKey = Ks
 			pkey.Algorithm.Value = algooid
 			pkey.Algorithm.Parameters.Curve = oids.Value.Curve

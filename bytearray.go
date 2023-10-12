@@ -6,8 +6,6 @@ import (
 	"encoding/asn1"
 )
 
-// Decode will unpack a byte array of DER encoded byte arrays into
-// asn1.RawValue structs.
 func b_Decode(bytes []byte) []asn1.RawValue {
 	ret := []asn1.RawValue{}
 	for {
@@ -25,8 +23,6 @@ func b_Decode(bytes []byte) []asn1.RawValue {
 	return ret
 }
 
-// This will DER unpack a byte array, and Decode the nested Byte array
-// that sits underneath it.
 func b_DERDecode(bytes []byte) []asn1.RawValue {
 	rawData := asn1.RawValue{}
 	if _, err := asn1.Unmarshal(bytes, &rawData); err != nil {
