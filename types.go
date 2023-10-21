@@ -38,7 +38,7 @@ type exportKeyBlob struct {
 			Enc []byte
 			Mac []byte
 		}
-		Oids asn1.RawValue `asn1:"tag:0,explicit,optional"`
+		Oids asn1.RawValue
 	}
 }
 

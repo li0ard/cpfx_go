@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"encoding/asn1"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/pem"
 	"fmt"
@@ -63,6 +64,31 @@ func costyl(val []byte) []byte {
 	return decodeHex("30" + fmt.Sprintf("%x", len(tmp)) + hex.EncodeToString(tmp))
 }
 
+// CryptoPro KEK diversification algorithm, RFC 4757 section 6.5
+func cp_kek_diversify(kek []byte, ukm []byte) []byte {
+	out := make([]byte, len(kek))
+	copy(out, kek)
+
+	for i := 0; i < 8; i++ {
+		s1, s2 := 0, 0
+		for j := 0; j < 8; j++ {
+			k := int32(binary.LittleEndian.Uint32(out[j*4 : j*4+4]))
+			if (ukm[i] >> uint(j) & 1) != 0 {
+				s1 += int(k)
+			} else {
+				s2 += int(k)
+			}
+		}
+		iv := make([]byte, 8)
+		binary.LittleEndian.PutUint32(iv[:4], uint32(s1%(1<<32)))
+		binary.LittleEndian.PutUint32(iv[4:], uint32(s2%(1<<32)))
+		cipher := gost28147.NewCipher(out, &gost28147.SboxIdGost2814789CryptoProAParamSet).NewCFBEncrypter(iv)
+		cipher.XORKeyStream(out, out)
+	}
+
+	return out
+}
+
 func main() {
 	if len(os.Args) < 2 {
 		fmt.Println("Как использовать: ./program <файл PFX>")
@@ -75,7 +101,11 @@ func main() {
 	PASS := string(password)
 	bin, _ := readBinFile(os.Args[1])
 	pfx, _ := getKeybags(bin)
+	count := 0
 	for _, keybag := range pfx {
+		if count == 1 {
+			break
+		}
 		var info pbeInfo
 		asn1.Unmarshal(keybag.Value.Bytes, &info)
 		ROUNDS := info.Header.Parameters.Rounds
@@ -106,6 +136,9 @@ func main() {
 		if algtype == "42aa" {
 			algooid = asn1.ObjectIdentifier([]int{1, 2, 643, 7, 1, 1, 1, 2})
 		}
+		if algtype == "24aa" {
+			algooid = asn1.ObjectIdentifier([]int{1, 2, 643, 2, 2, 19})
+		}
 
 		var oids exportKeyBlobOids
 
@@ -118,6 +151,31 @@ func main() {
 		KEKe := kdfer.Derive(nil, decodeHex("26BDB878"), UKM)
 		fmt.Println(" KEKE  = " + hex.EncodeToString(KEKe))
 		switch algtype {
+		case "24aa":
+			Ks := make([]byte, len(ENC))
+			cipher := gost28147.NewCipher(cp_kek_diversify(KEY, UKM), &gost28147.SboxIdGost2814789CryptoProAParamSet)
+			fe := cipher.NewECBDecrypter()
+			fe.CryptBlocks(Ks, ENC)
+			fmt.Println(" K     = " + hex.EncodeToString(Ks))
+			var pkey privateKey
+			pkey.PrivateKey = Ks
+			pkey.Algorithm.Value = algooid
+			pkey.Algorithm.Parameters.Curve = oids.Value.Curve
+			pkey.Algorithm.Parameters.Digest = oids.Value.Digest
+			result, err := asn1.Marshal(pkey)
+			if err != nil {
+				panic("Ks2pem: " + err.Error())
+			}
+			block := &pem.Block{
+				Type:  "PRIVATE KEY",
+				Bytes: result,
+			}
+			uid := uuid.NewString()
+			file, _ := os.Create("exported_" + uid + ".pem")
+			defer file.Close()
+			pem.Encode(file, block)
+			fmt.Println("Сохранено в exported_" + uid + ".pem")
+
 		case "46aa", "42aa":
 			Ks := make([]byte, len(ENC))
 			cipher := gost28147.NewCipher(KEKe, &gost28147.SboxIdGost2814789CryptoProAParamSet)
@@ -143,7 +201,8 @@ func main() {
 			pem.Encode(file, block)
 			fmt.Println("Сохранено в exported_" + uid + ".pem")
 		default:
-			panic("unwrap: not supported key algorithm. It must be GOST 34.10-2012_256 or 34.10-2012_512")
+			panic("unwrap: not supported key algorithm. It must be GOST 34.10-2012_256 or 34.10-2012_512 (" + algtype + ")")
 		}
+		count++
 	}
 }
