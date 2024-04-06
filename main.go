@@ -89,6 +89,27 @@ func cp_kek_diversify(kek []byte, ukm []byte) []byte {
 	return out
 }
 
+func save_key(ks []byte, algooid asn1.ObjectIdentifier, curve asn1.ObjectIdentifier, digest asn1.ObjectIdentifier) {
+	var pkey privateKey
+	pkey.PrivateKey = ks
+	pkey.Algorithm.Value = algooid
+	pkey.Algorithm.Parameters.Curve = curve
+	pkey.Algorithm.Parameters.Digest = digest
+	result, err := asn1.Marshal(pkey)
+	if err != nil {
+		panic("Ks2pem: " + err.Error())
+	}
+	block := &pem.Block{
+		Type:  "PRIVATE KEY",
+		Bytes: result,
+	}
+	uid := uuid.NewString()
+	file, _ := os.Create("exported_" + uid + ".pem")
+	defer file.Close()
+	pem.Encode(file, block)
+	fmt.Println("Сохранено в exported_" + uid + ".pem")
+}
+
 func main() {
 	if len(os.Args) < 2 {
 		fmt.Println("Как использовать: ./program <файл PFX>")
@@ -106,6 +127,7 @@ func main() {
 		if count == 1 {
 			break
 		}
+
 		var info pbeInfo
 		asn1.Unmarshal(keybag.Value.Bytes, &info)
 		ROUNDS := info.Header.Parameters.Rounds
@@ -121,12 +143,15 @@ func main() {
 		}
 		fmt.Println(" KEY   = " + hex.EncodeToString(KEY))
 		fmt.Println(" IV    = " + SALT[:16])
+
 		cipher := gost28147.NewCipher(KEY, &gost28147.SboxIdGost2814789CryptoProAParamSet)
 		fe := cipher.NewCFBDecrypter(decodeHex(SALT[:16]))
 		result := make([]byte, len(info.EncryptedKey))
 		fe.XORKeyStream(result, info.EncryptedKey)
+
 		var blob keyBlob
 		asn1.Unmarshal(result, &blob)
+
 		var blob2 exportKeyBlob
 		asn1.Unmarshal(decodeHex(hex.EncodeToString(blob.Blob)[32:]), &blob2)
 		UKM := blob2.Value.Ukm
@@ -141,7 +166,6 @@ func main() {
 		}
 
 		var oids exportKeyBlobOids
-
 		_, err := asn1.Unmarshal(costyl(blob2.Value.Oids.FullBytes), &oids)
 		if err != nil {
 			panic("costyl: " + err.Error())
@@ -150,6 +174,7 @@ func main() {
 		kdfer := gost34112012256.NewKDF(KEY)
 		KEKe := kdfer.Derive(nil, decodeHex("26BDB878"), UKM)
 		fmt.Println(" KEKE  = " + hex.EncodeToString(KEKe))
+
 		switch algtype {
 		case "24aa":
 			Ks := make([]byte, len(ENC))
@@ -157,24 +182,7 @@ func main() {
 			fe := cipher.NewECBDecrypter()
 			fe.CryptBlocks(Ks, ENC)
 			fmt.Println(" K     = " + hex.EncodeToString(Ks))
-			var pkey privateKey
-			pkey.PrivateKey = Ks
-			pkey.Algorithm.Value = algooid
-			pkey.Algorithm.Parameters.Curve = oids.Value.Curve
-			pkey.Algorithm.Parameters.Digest = oids.Value.Digest
-			result, err := asn1.Marshal(pkey)
-			if err != nil {
-				panic("Ks2pem: " + err.Error())
-			}
-			block := &pem.Block{
-				Type:  "PRIVATE KEY",
-				Bytes: result,
-			}
-			uid := uuid.NewString()
-			file, _ := os.Create("exported_" + uid + ".pem")
-			defer file.Close()
-			pem.Encode(file, block)
-			fmt.Println("Сохранено в exported_" + uid + ".pem")
+			save_key(Ks, algooid, oids.Value.Curve, oids.Value.Digest)
 
 		case "46aa", "42aa":
 			Ks := make([]byte, len(ENC))
@@ -182,24 +190,7 @@ func main() {
 			fe := cipher.NewECBDecrypter()
 			fe.CryptBlocks(Ks, ENC)
 			fmt.Println(" K     = " + hex.EncodeToString(Ks))
-			var pkey privateKey
-			pkey.PrivateKey = Ks
-			pkey.Algorithm.Value = algooid
-			pkey.Algorithm.Parameters.Curve = oids.Value.Curve
-			pkey.Algorithm.Parameters.Digest = oids.Value.Digest
-			result, err := asn1.Marshal(pkey)
-			if err != nil {
-				panic("Ks2pem: " + err.Error())
-			}
-			block := &pem.Block{
-				Type:  "PRIVATE KEY",
-				Bytes: result,
-			}
-			uid := uuid.NewString()
-			file, _ := os.Create("exported_" + uid + ".pem")
-			defer file.Close()
-			pem.Encode(file, block)
-			fmt.Println("Сохранено в exported_" + uid + ".pem")
+			save_key(Ks, algooid, oids.Value.Curve, oids.Value.Digest)
 		default:
 			panic("unwrap: not supported key algorithm. It must be GOST 34.10-2012_256 or 34.10-2012_512 (" + algtype + ")")
 		}
