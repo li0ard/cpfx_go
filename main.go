@@ -110,6 +110,17 @@ func save_key(ks []byte, algooid asn1.ObjectIdentifier, curve asn1.ObjectIdentif
 	fmt.Println("Сохранено в exported_" + uid + ".pem")
 }
 
+func readPassword() string {
+	stdinfd := int(os.Stdin.Fd())
+	oldState, err := term.MakeRaw(stdinfd)
+	if err != nil {
+		panic(err)
+	}
+	defer term.Restore(stdinfd, oldState)
+	password, _ := term.ReadPassword(stdinfd)
+	return string(password)
+}
+
 func main() {
 	if len(os.Args) < 2 {
 		fmt.Println("Как использовать: ./program <файл PFX>")
@@ -117,9 +128,8 @@ func main() {
 	}
 	fmt.Println("CryptoPro PFX Decoder by li0ard (Go version)")
 	fmt.Printf("Введите пароль: ")
-	password, _ := term.ReadPassword(0)
+	PASS := readPassword()
 	fmt.Println("")
-	PASS := string(password)
 	bin, _ := readBinFile(os.Args[1])
 	pfx, _ := getKeybags(bin)
 	count := 0
